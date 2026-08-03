@@ -73,7 +73,7 @@ export class UIController {
     root.querySelector('[data-help-close]').addEventListener('click', () => root.querySelector('[data-help]').classList.add('hidden'));
     root.querySelectorAll('[data-direction]').forEach((button) => button.addEventListener('click', () => callbacks.chooseGravity(button.dataset.direction)));
     root.querySelector('[data-replay]').addEventListener('click', callbacks.reset);
-    root.querySelector('[data-free-play]').addEventListener('click', () => this.showClear(false));
+    root.querySelector('[data-free-play]').addEventListener('click', callbacks.freePlay);
   }
 
   updateStatus(directionId, held) {

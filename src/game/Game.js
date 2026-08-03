@@ -49,6 +49,7 @@ export class Game {
     this.input = new InputController(this.renderer.domElement);
     this.ui = new UIController(container, {
       reset: () => this.reset(),
+      freePlay: () => this.enableFreePlay(),
       chooseGravity: (id) => this.chooseGravity(id),
     });
     this.touch = new TouchControls(container);
@@ -184,8 +185,9 @@ export class Game {
     this.player.body.velocity.z = THREE.MathUtils.lerp(this.player.body.velocity.z, desired.z, blend);
     this.player.body.applyForce(new CANNON.Vec3(0, -this.player.body.mass * CONFIG.player.gravity, 0));
 
-    if (desired.lengthSq() > 0.08) {
-      const targetYaw = Math.atan2(desired.x, desired.z);
+    const planarSpeedSq = this.player.body.velocity.x ** 2 + this.player.body.velocity.z ** 2;
+    if (planarSpeedSq > 0.08) {
+      const targetYaw = Math.atan2(this.player.body.velocity.x, this.player.body.velocity.z);
       let diff = targetYaw - this.player.group.rotation.y;
       diff = Math.atan2(Math.sin(diff), Math.cos(diff));
       this.player.group.rotation.y += diff * Math.min(1, delta * 12);
@@ -302,10 +304,19 @@ export class Game {
   }
 
   updateInteraction() {
+    const interactionsEnabled = !this.clear || this.freePlay;
     const close = this.distanceToBox() <= CONFIG.box.interactionDistance;
-    const ceilingRecall = this.box.isAtCeiling() && !this.box.stolen && Boolean(this.box.gravityDirection) && !this.clear;
-    this.ui.showInteraction((close || ceilingRecall) && !this.box.stolen && Boolean(this.box.gravityDirection) && !this.clear, ceilingRecall ? '天井から遠隔回収' : '重力を盗む');
+    const ceilingRecall = this.box.isAtCeiling() && !this.box.stolen && Boolean(this.box.gravityDirection) && interactionsEnabled;
+    this.ui.showInteraction((close || ceilingRecall) && !this.box.stolen && Boolean(this.box.gravityDirection) && interactionsEnabled, ceilingRecall ? '天井から遠隔回収' : '重力を盗む');
     this.ui.setRecoveryMode(ceilingRecall);
+  }
+
+  enableFreePlay() {
+    this.freePlay = true;
+    this.ui.showClear(false);
+    this.player.body.wakeUp();
+    this.box.body.wakeUp();
+    this.ui.toast('自由に遊べるようになった！', 'green');
   }
 
   checkBounds() {
@@ -325,6 +336,9 @@ export class Game {
     this.player.body.velocity.setZero();
     this.player.body.angularVelocity.setZero();
     this.player.group.position.set(...CONFIG.player.spawn);
+    const doorDirectionX = CONFIG.door.position[0] - CONFIG.player.spawn[0];
+    const doorDirectionZ = CONFIG.door.position[2] - CONFIG.player.spawn[2];
+    this.player.group.rotation.y = Math.atan2(doorDirectionX, doorDirectionZ);
     this.box.reset();
     this.room.door.body.position.set(...CONFIG.door.position);
     this.room.door.body.velocity.setZero();
