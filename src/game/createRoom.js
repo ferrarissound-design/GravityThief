@@ -1,66 +1,59 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
-import { CONFIG } from './config.js';
 
-function addBlock(scene, world, size, position, color, physicsMaterial, options = {}) {
-  const geometry = new THREE.BoxGeometry(...size);
-  const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
-    color,
-    roughness: options.roughness ?? 0.82,
-    transparent: options.opacity !== undefined,
-    opacity: options.opacity ?? 1,
-  }));
+export function createBlock(parent, world, physicsMaterial, definition, registerBody) {
+  const { size, position } = definition;
+  const material = new THREE.MeshStandardMaterial({
+    color: definition.color,
+    roughness: definition.roughness ?? 0.82,
+    transparent: Boolean(definition.glass) || definition.opacity !== undefined,
+    opacity: definition.glass ? 0.34 : (definition.opacity ?? 1),
+    depthWrite: !definition.glass,
+    emissive: 0x000000,
+  });
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), material);
+  mesh.name = definition.id ?? 'stage-block';
   mesh.position.set(...position);
   mesh.receiveShadow = true;
-  mesh.castShadow = Boolean(options.castShadow);
-  scene.add(mesh);
+  mesh.castShadow = Boolean(definition.castShadow ?? !definition.glass);
+  parent.add(mesh);
 
   const body = new CANNON.Body({
     mass: 0,
     material: physicsMaterial,
-    type: options.kinematic ? CANNON.Body.KINEMATIC : CANNON.Body.STATIC,
+    type: definition.kinematic ? CANNON.Body.KINEMATIC : CANNON.Body.STATIC,
     shape: new CANNON.Box(new CANNON.Vec3(size[0] / 2, size[1] / 2, size[2] / 2)),
     position: new CANNON.Vec3(...position),
   });
   world.addBody(body);
+  registerBody(body);
   return { mesh, body };
 }
 
-export function createRoom(scene, world, physicsMaterial) {
-  const { width: w, height: h, depth: d, wallThickness: t } = CONFIG.room;
-  const floor = addBlock(scene, world, [w, t, d], [0, -t / 2, 0], 0xf7edcf, physicsMaterial);
-  const ceiling = addBlock(scene, world, [w, t, d], [0, h + t / 2, 0], 0xf2e6c9, physicsMaterial, { opacity: 0.36 });
-  const left = addBlock(scene, world, [t, h, d], [-w / 2 - t / 2, h / 2, 0], 0xd9a483, physicsMaterial);
-  const right = addBlock(scene, world, [t, h, d], [w / 2 + t / 2, h / 2, 0], 0xd9a483, physicsMaterial);
-  const back = addBlock(scene, world, [w, h, t], [0, h / 2, -d / 2 - t / 2], 0xdca887, physicsMaterial);
-  const front = addBlock(scene, world, [w, h, t], [0, h / 2, d / 2 + t / 2], 0xdca887, physicsMaterial);
+export function createRoom(parent, world, physicsMaterial, stage, registerBody) {
+  const { width: w, height: h, depth: d } = stage.room;
+  const t = 0.35;
+  const palette = stage.palette;
+  const definitions = {
+    floor: { id: 'floor', size: [w, t, d], position: [0, -t / 2, 0], color: palette.floor },
+    ceiling: { id: 'ceiling', size: [w, t, d], position: [0, h + t / 2, 0], color: palette.ceiling, opacity: 0.44 },
+    left: { id: 'left-wall', size: [t, h, d], position: [-w / 2 - t / 2, h / 2, 0], color: palette.wall },
+    right: { id: 'right-wall', size: [t, h, d], position: [w / 2 + t / 2, h / 2, 0], color: palette.wall },
+    back: { id: 'back-wall', size: [w, h, t], position: [0, h / 2, -d / 2 - t / 2], color: palette.wall },
+    front: { id: 'front-wall', size: [w, h, t], position: [0, h / 2, d / 2 + t / 2], color: palette.wall },
+  };
 
-  const grid = new THREE.GridHelper(w, 18, 0xd6bb88, 0xe9d9b5);
+  const surfaces = Object.fromEntries(Object.entries(definitions).map(([id, definition]) => [
+    id,
+    createBlock(parent, world, physicsMaterial, definition, registerBody),
+  ]));
+
+  const grid = new THREE.GridHelper(w, Math.max(16, Math.round(w)), palette.grid, palette.grid);
+  grid.name = 'floor-grid';
   grid.position.y = 0.012;
-  scene.add(grid);
+  grid.material.transparent = true;
+  grid.material.opacity = stage.id === 5 ? 0.34 : 0.48;
+  parent.add(grid);
 
-  // A low pedestal makes the first gravity theft easy to read.
-  const pedestal = addBlock(scene, world, [2.8, 1.18, 2.8], [0, 0.59, 3.4], 0xc6d6dd, physicsMaterial, { castShadow: true });
-
-  // Partition the goal room while leaving a central doorway.
-  const doorZ = CONFIG.door.position[2];
-  const openingWidth = CONFIG.door.size[0];
-  const sideWidth = (w - openingWidth) / 2;
-  addBlock(scene, world, [sideWidth, h, 0.46], [-(openingWidth + sideWidth) / 2, h / 2, doorZ], 0xe1b08e, physicsMaterial);
-  addBlock(scene, world, [sideWidth, h, 0.46], [(openingWidth + sideWidth) / 2, h / 2, doorZ], 0xe1b08e, physicsMaterial);
-  addBlock(scene, world, [openingWidth, 1.0, 0.46], [0, h - 0.5, doorZ], 0xe1b08e, physicsMaterial);
-
-  const door = addBlock(scene, world, CONFIG.door.size, CONFIG.door.position, 0x6e8b9b, physicsMaterial, {
-    roughness: 0.45,
-    castShadow: true,
-    kinematic: true,
-  });
-  const doorPanel = new THREE.Mesh(
-    new THREE.BoxGeometry(1.1, 0.18, 0.05),
-    new THREE.MeshStandardMaterial({ color: 0x95e4db, emissive: 0x30877f, emissiveIntensity: 0.5 }),
-  );
-  doorPanel.position.set(0, 0.65, 0.24);
-  door.mesh.add(doorPanel);
-
-  return { floor, ceiling, left, right, back, front, pedestal, door };
+  return { ...surfaces, grid };
 }

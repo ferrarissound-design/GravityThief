@@ -51,4 +51,12 @@ export class InputController {
     this.lookDelta.y = 0;
     return value;
   }
+
+  reset() {
+    this.keys.clear();
+    this.actions.clear();
+    this.lookDelta.x = 0;
+    this.lookDelta.y = 0;
+    this.dragging = false;
+  }
 }
