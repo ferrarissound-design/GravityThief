@@ -191,11 +191,11 @@ export class Game {
   }
 
   isGrounded() {
-    const from = this.player.body.position.vadd(new CANNON.Vec3(0, -this.player.halfHeight - 0.025, 0));
-    const to = from.vadd(new CANNON.Vec3(0, -0.18, 0));
+    const from = this.player.body.position.vadd(new CANNON.Vec3(0, 0.04, 0));
+    const to = this.player.body.position.vadd(new CANNON.Vec3(0, -this.player.halfHeight - 0.2, 0));
     const result = new CANNON.RaycastResult();
-    this.world.raycastClosest(from, to, { skipBackfaces: true, collisionFilterMask: -1 }, result);
-    return result.hasHit && result.body !== this.player.body;
+    this.world.raycastClosest(from, to, { skipBackfaces: true, collisionFilterMask: 1 }, result);
+    return result.hasHit;
   }
 
   tryJump() {

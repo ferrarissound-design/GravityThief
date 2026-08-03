@@ -36,6 +36,8 @@ export function createPlayer(scene, world, material) {
   const body = new CANNON.Body({
     mass: 5,
     material,
+    collisionFilterGroup: 2,
+    collisionFilterMask: -1,
     shape: new CANNON.Box(new CANNON.Vec3(w / 2, h / 2, d / 2)),
     position: new CANNON.Vec3(...CONFIG.player.spawn),
     fixedRotation: true,
