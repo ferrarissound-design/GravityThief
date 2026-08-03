@@ -7,14 +7,31 @@ export class TouchControls {
     if (!this.active) return;
 
     root.classList.add('touch-mode');
+    const documentRoot = root.ownerDocument;
     const preventGesture = (event) => event.preventDefault();
-    root.addEventListener('gesturestart', preventGesture, { passive: false });
-    root.addEventListener('gesturechange', preventGesture, { passive: false });
-    root.addEventListener('gestureend', preventGesture, { passive: false });
-    root.addEventListener('dblclick', preventGesture);
-    root.addEventListener('touchmove', (event) => {
+    documentRoot.addEventListener('gesturestart', preventGesture, { passive: false, capture: true });
+    documentRoot.addEventListener('gesturechange', preventGesture, { passive: false, capture: true });
+    documentRoot.addEventListener('gestureend', preventGesture, { passive: false, capture: true });
+    documentRoot.addEventListener('dblclick', preventGesture, { capture: true });
+
+    const preventMultiTouch = (event) => {
       if (event.touches.length > 1) event.preventDefault();
-    }, { passive: false });
+    };
+    documentRoot.addEventListener('touchstart', preventMultiTouch, { passive: false, capture: true });
+    documentRoot.addEventListener('touchmove', preventMultiTouch, { passive: false, capture: true });
+
+    let lastTap = null;
+    documentRoot.addEventListener('touchend', (event) => {
+      const touch = event.changedTouches[0];
+      if (!touch) return;
+
+      const now = performance.now();
+      const isRapidRepeat = lastTap
+        && now - lastTap.time < 400
+        && Math.hypot(touch.clientX - lastTap.x, touch.clientY - lastTap.y) < 48;
+      if (isRapidRepeat) event.preventDefault();
+      lastTap = { time: now, x: touch.clientX, y: touch.clientY };
+    }, { passive: false, capture: true });
 
     const joystick = root.querySelector('[data-joystick]');
     const knob = root.querySelector('[data-joystick-knob]');
@@ -52,6 +69,7 @@ export class TouchControls {
     joystick.addEventListener('pointercancel', stopJoystick);
 
     const lookArea = root.querySelector('[data-look-area]');
+    lookArea.addEventListener('click', () => {});
     let lookPointer = null;
     let last = null;
     lookArea.addEventListener('pointerdown', (event) => {
