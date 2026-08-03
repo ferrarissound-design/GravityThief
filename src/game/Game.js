@@ -207,14 +207,19 @@ export class Game {
   }
 
   trySteal() {
-    if ((this.clear && !this.freePlay) || this.distanceToBox() > CONFIG.box.interactionDistance) return;
+    if (this.clear && !this.freePlay) return;
+    const ceilingRecall = this.box.isAtCeiling();
+    if (this.distanceToBox() > CONFIG.box.interactionDistance && !ceilingRecall) {
+      this.ui.toast('箱に近づこう', 'soft');
+      return;
+    }
     if (!this.box.gravityDirection) {
       this.ui.toast('この箱はもう無重力だ', 'soft');
       return;
     }
     if (this.box.steal()) {
       this.ui.updateStatus(this.box.directionId, this.box.stolen);
-      this.ui.toast('重力を盗んだ！', 'teal');
+      this.ui.toast(ceilingRecall ? '天井の箱から重力を遠隔回収！' : '重力を盗んだ！', ceilingRecall ? 'gold' : 'teal');
       window.setTimeout(() => this.ui.showPicker(true), 240);
     }
   }
@@ -298,7 +303,9 @@ export class Game {
 
   updateInteraction() {
     const close = this.distanceToBox() <= CONFIG.box.interactionDistance;
-    this.ui.showInteraction(close && !this.box.stolen && Boolean(this.box.gravityDirection) && !this.clear);
+    const ceilingRecall = this.box.isAtCeiling() && !this.box.stolen && Boolean(this.box.gravityDirection) && !this.clear;
+    this.ui.showInteraction((close || ceilingRecall) && !this.box.stolen && Boolean(this.box.gravityDirection) && !this.clear, ceilingRecall ? '天井から遠隔回収' : '重力を盗む');
+    this.ui.setRecoveryMode(ceilingRecall);
   }
 
   checkBounds() {

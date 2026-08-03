@@ -54,7 +54,7 @@ export class UIController {
           <div class="joystick" data-joystick><div class="joystick-knob" data-joystick-knob></div></div>
           <div class="look-area" data-look-area></div>
           <button class="touch-button jump" data-touch-action="jump">↑<span>JUMP</span></button>
-          <button class="touch-button steal" data-touch-action="steal">✦<span>STEAL</span></button>
+          <button class="touch-button steal" data-touch-action="steal" aria-label="箱から重力を盗む">✦<span>STEAL</span></button>
         </div>
       </div>
     `);
@@ -62,6 +62,8 @@ export class UIController {
     this.boxStatus = root.querySelector('[data-box-status]');
     this.heldStatus = root.querySelector('[data-held-status]');
     this.interaction = root.querySelector('[data-interaction]');
+    this.interactionLabel = this.interaction.querySelector('span');
+    this.stealButton = root.querySelector('[data-touch-action="steal"]');
     this.picker = root.querySelector('[data-picker]');
     this.toastElement = root.querySelector('[data-toast]');
     this.clearScreen = root.querySelector('[data-clear]');
@@ -82,8 +84,15 @@ export class UIController {
     this.heldStatus.classList.toggle('held', held);
   }
 
-  showInteraction(show) {
+  showInteraction(show, label = '重力を盗む') {
+    this.interactionLabel.textContent = label;
     this.interaction.classList.toggle('visible', show);
+  }
+
+  setRecoveryMode(active) {
+    this.stealButton.classList.toggle('recovery', active);
+    this.stealButton.querySelector('span').textContent = active ? 'RECALL' : 'STEAL';
+    this.stealButton.setAttribute('aria-label', active ? '天井の箱から重力を遠隔回収' : '箱から重力を盗む');
   }
 
   showPicker(show) {
@@ -107,5 +116,6 @@ export class UIController {
     this.showClear(false);
     this.showInteraction(false);
     this.toastElement.classList.remove('visible');
+    this.setRecoveryMode(false);
   }
 }
