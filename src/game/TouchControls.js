@@ -7,6 +7,15 @@ export class TouchControls {
     if (!this.active) return;
 
     root.classList.add('touch-mode');
+    const preventGesture = (event) => event.preventDefault();
+    root.addEventListener('gesturestart', preventGesture, { passive: false });
+    root.addEventListener('gesturechange', preventGesture, { passive: false });
+    root.addEventListener('gestureend', preventGesture, { passive: false });
+    root.addEventListener('dblclick', preventGesture);
+    root.addEventListener('touchmove', (event) => {
+      if (event.touches.length > 1) event.preventDefault();
+    }, { passive: false });
+
     const joystick = root.querySelector('[data-joystick]');
     const knob = root.querySelector('[data-joystick-knob]');
     let joyPointer = null;
@@ -24,11 +33,13 @@ export class TouchControls {
       this.move.y = -y / max;
     };
     joystick.addEventListener('pointerdown', (event) => {
+      event.preventDefault();
       joyPointer = event.pointerId;
       joystick.setPointerCapture(event.pointerId);
       updateJoystick(event);
     });
     joystick.addEventListener('pointermove', (event) => {
+      event.preventDefault();
       if (event.pointerId === joyPointer) updateJoystick(event);
     });
     const stopJoystick = (event) => {
@@ -45,12 +56,14 @@ export class TouchControls {
     let last = null;
     lookArea.addEventListener('pointerdown', (event) => {
       if (event.target.closest('button')) return;
+      event.preventDefault();
       lookPointer = event.pointerId;
       last = { x: event.clientX, y: event.clientY };
       lookArea.setPointerCapture(event.pointerId);
     });
     lookArea.addEventListener('pointermove', (event) => {
       if (event.pointerId !== lookPointer || !last) return;
+      event.preventDefault();
       this.lookDelta.x += event.clientX - last.x;
       this.lookDelta.y += event.clientY - last.y;
       last = { x: event.clientX, y: event.clientY };
