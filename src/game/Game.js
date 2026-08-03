@@ -26,10 +26,11 @@ export class Game {
     this.scene.background = new THREE.Color(0xccefff);
     this.scene.fog = new THREE.Fog(0xccefff, 18, 36);
 
-    this.camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.1, 80);
+    const viewport = this.getViewportSize();
+    this.camera = new THREE.PerspectiveCamera(58, viewport.width / viewport.height, 0.1, 80);
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setSize(innerWidth, innerHeight);
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    this.renderer.setSize(viewport.width, viewport.height, false);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -53,6 +54,7 @@ export class Game {
     this.touch = new TouchControls(container);
 
     window.addEventListener('resize', () => this.resize());
+    window.visualViewport?.addEventListener('resize', () => this.resize());
     document.addEventListener('visibilitychange', () => { this.lastTime = performance.now() / 1000; });
     this.reset();
   }
@@ -328,9 +330,18 @@ export class Game {
   }
 
   resize() {
-    this.camera.aspect = innerWidth / innerHeight;
+    const viewport = this.getViewportSize();
+    this.camera.aspect = viewport.width / viewport.height;
     this.camera.updateProjectionMatrix();
-    this.renderer.setSize(innerWidth, innerHeight);
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    this.renderer.setSize(viewport.width, viewport.height, false);
+  }
+
+  getViewportSize() {
+    const bounds = this.container.getBoundingClientRect();
+    return {
+      width: Math.max(1, Math.round(bounds.width)),
+      height: Math.max(1, Math.round(bounds.height)),
+    };
   }
 }
