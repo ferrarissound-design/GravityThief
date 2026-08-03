@@ -63,6 +63,9 @@ canvas { display: block; width: 100% !important; height: 100% !important; touch-
 .objective-card,
 .status-card,
 .reset-button,
+.settings-button,
+.camera-settings,
+.comfort-dot,
 .help,
 .interaction,
 .toast {
@@ -132,6 +135,69 @@ canvas { display: block; width: 100% !important; height: 100% !important; touch-
   transition: transform .15s, background .15s;
 }
 .reset-button:hover { transform: translateY(-2px); background: #fff; }
+
+.settings-button {
+  top: clamp(12px, 2.3vw, 24px);
+  right: clamp(126px, 11vw, 144px);
+  width: 46px;
+  height: 46px;
+  border: 2px solid rgba(255,255,255,.82);
+  border-radius: 15px;
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(10px);
+  font-size: 20px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.camera-settings {
+  z-index: 35;
+  top: clamp(70px, 8vw, 86px);
+  right: clamp(12px, 2.3vw, 24px);
+  width: min(300px, calc(100vw - 24px));
+  padding: 15px;
+  border: 2px solid rgba(255,255,255,.9);
+  border-radius: 18px;
+  background: rgba(255,252,239,.97);
+  box-shadow: 0 18px 48px rgba(34,48,58,.26);
+  pointer-events: auto;
+  backdrop-filter: blur(12px);
+}
+.camera-settings-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.camera-settings-head strong { display: block; font-size: 14px; }
+.camera-settings-head small { display: block; margin-top: 2px; color: var(--stage-accent); font-size: 9px; letter-spacing: .14em; font-weight: 900; }
+.camera-settings-head button { border: 0; background: transparent; color: var(--muted); font-size: 22px; line-height: 1; cursor: pointer; }
+.comfort-switch { display: flex; align-items: center; gap: 9px; margin-top: 13px; cursor: pointer; }
+.comfort-switch input { position: absolute; opacity: 0; pointer-events: none; }
+.comfort-switch span { position: relative; width: 44px; height: 24px; border-radius: 999px; background: #aeb9bd; transition: background .18s; }
+.comfort-switch span::after { content: ""; position: absolute; width: 18px; height: 18px; left: 3px; top: 3px; border-radius: 50%; background: white; box-shadow: 0 2px 5px rgba(31,49,59,.25); transition: transform .18s; }
+.comfort-switch input:checked + span { background: var(--stage-accent); }
+.comfort-switch input:checked + span::after { transform: translateX(20px); }
+.comfort-switch b { font-size: 12px; color: var(--muted); }
+.sensitivity-setting { margin-top: 14px; }
+.sensitivity-setting > span { display: block; margin-bottom: 7px; color: var(--muted); font-size: 11px; font-weight: 800; }
+.sensitivity-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.sensitivity-options button { min-height: 35px; border: 1px solid #dfe3df; border-radius: 10px; background: white; color: var(--ink); font-size: 11px; font-weight: 800; cursor: pointer; }
+.sensitivity-options button.selected { border-color: var(--stage-accent); background: color-mix(in srgb, var(--stage-accent) 13%, white); color: color-mix(in srgb, var(--stage-accent) 70%, #21323e); box-shadow: inset 0 0 0 1px var(--stage-accent); }
+.camera-settings > p { margin: 11px 0 0; color: var(--muted); font-size: 10px; }
+
+.comfort-dot {
+  z-index: 4;
+  left: 50%;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: rgba(239, 253, 255, .72);
+  box-shadow: 0 0 0 2px rgba(38, 76, 87, .13), 0 0 7px rgba(255,255,255,.5);
+  pointer-events: none;
+}
+#game.gravity-picker-open .comfort-dot,
+#game.clear-screen-open .comfort-dot,
+#game.camera-settings-open .comfort-dot { display: none; }
 
 .help {
   left: 22px;
@@ -305,6 +371,9 @@ kbd { font-family: inherit; font-weight: 900; border-radius: 6px; color: white; 
   .status-row strong { font-size: 10px; }
   .reset-button { padding: 10px 12px; }
   .reset-button span { display: none; }
+  .settings-button { right: 68px; width: 44px; height: 44px; }
+  .camera-settings { top: 68px; right: 10px; width: min(278px, calc(100vw - 20px)); padding: 13px; }
+  #game.camera-settings-open .status-card { opacity: 0; visibility: hidden; }
   .help { display: none; }
   .toast { top: 72px; max-width: calc(100% - 28px); white-space: nowrap; font-size: 12px; }
   .interaction { display: none; }

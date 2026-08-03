@@ -4,6 +4,7 @@ import { CONFIG, GRAVITY_DIRECTIONS } from './config.js';
 import { InputController } from './InputController.js';
 import { TouchControls } from './TouchControls.js';
 import { UIController } from './UIController.js';
+import { ComfortCamera, normalizeCameraSettings } from './ComfortCamera.js';
 import { getStageDefinition, STAGE_COUNT } from './stages/stageDefinitions.js';
 import { loadStage } from './stages/stageLoader.js';
 
@@ -23,10 +24,21 @@ export class Game {
     this.repeatHintArmed = false;
     this.repeatHintBox = null;
     this.repeatHintDelay = 0;
+    this.isTouchDevice = matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0;
+    this.cameraSettings = this.readCameraSettings();
+    this.pickerOpen = false;
+    this.settingsOpen = false;
+
+    this.moveForward = new THREE.Vector3();
+    this.moveRight = new THREE.Vector3();
+    this.desiredMovement = new THREE.Vector3();
+    this.playerDownForce = new CANNON.Vec3();
 
     this.scene = new THREE.Scene();
     const viewport = this.getViewportSize();
-    this.camera = new THREE.PerspectiveCamera(58, viewport.width / viewport.height, 0.1, 90);
+    this.camera = new THREE.PerspectiveCamera(CONFIG.camera.fov, viewport.width / viewport.height, CONFIG.camera.near, CONFIG.camera.far);
+    this.comfortCamera = new ComfortCamera(this.camera, this.isTouchDevice);
+    this.comfortCamera.setSettings(this.cameraSettings);
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     this.renderer.setSize(viewport.width, viewport.height, false);
@@ -48,8 +60,13 @@ export class Game {
       chooseGravity: (id) => this.chooseGravity(id),
       previewGravity: (id) => this.previewGravity(id),
       clearPreview: () => this.clearGravityPreview(),
+      setMotionComfort: (enabled) => this.setMotionComfort(enabled),
+      setCameraSensitivity: (value) => this.setCameraSensitivity(value),
+      settingsVisibility: (show) => this.setSettingsVisibility(show),
     });
     this.touch = new TouchControls(container);
+    this.ui.setCameraSettings(this.cameraSettings);
+    this.saveCameraSettings();
 
     window.addEventListener('resize', () => this.resize());
     window.visualViewport?.addEventListener('resize', () => this.resize());
@@ -134,19 +151,22 @@ export class Game {
     this.activeBox = null;
     this.heldBox = null;
     this.lastStatusKey = '';
-    this.cameraYaw = this.stage.camera.yaw;
-    this.cameraPitch = this.stage.camera.pitch;
-    this.cameraDistance = this.stage.camera.distance;
     this.repeatHintArmed = false;
     this.repeatHintBox = null;
     this.repeatHintDelay = 0;
-    this.facePlayerToward(this.stage.doors[0]?.position ?? this.stage.goal.position);
-    this.updateCamera(1);
-    this.ui.resetTransient();
-    this.ui.setStage(this.stage, STAGE_COUNT);
-    this.ui.updateStatus(null, null);
     this.input.reset?.();
     this.touch.reset?.();
+    this.pickerOpen = false;
+    this.settingsOpen = false;
+    this.facePlayerToward(this.stage.doors[0]?.position ?? this.stage.goal.position);
+    this.runtime.root.updateMatrixWorld(true);
+    this.comfortCamera.setSettings(this.cameraSettings);
+    this.comfortCamera.reset(this.stage, this.player.body.position, this.runtime.cameraColliders);
+    this.ui.resetTransient();
+    this.ui.setStage(this.stage, STAGE_COUNT);
+    this.ui.setCameraSettings(this.cameraSettings);
+    this.ui.updateStatus(null, null);
+    this.refreshCameraInputState();
     this.lastTime = performance.now() / 1000;
 
     this.highestStage = Math.max(this.highestStage ?? 1, this.stage.id);
@@ -155,6 +175,7 @@ export class Game {
 
   unloadStage() {
     this.clearStageTimers();
+    this.comfortCamera?.setColliders([]);
     this.runtime?.dispose();
     this.runtime = null;
     this.player = null;
@@ -166,12 +187,16 @@ export class Game {
   transitionToStage(index) {
     if (this.transitioning) return;
     this.transitioning = true;
+    this.refreshCameraInputState();
     this.ui.showFade(true);
     window.setTimeout(() => {
       this.loadStage(index);
       requestAnimationFrame(() => {
         this.ui.showFade(false);
-        window.setTimeout(() => { this.transitioning = false; }, 260);
+        window.setTimeout(() => {
+          this.transitioning = false;
+          this.refreshCameraInputState();
+        }, 260);
       });
     }, 230);
   }
@@ -189,12 +214,12 @@ export class Game {
   handleInput() {
     const lookA = this.input.consumeLook();
     const lookB = this.touch.consumeLook();
-    this.cameraYaw -= (lookA.x + lookB.x) * 0.006;
-    this.cameraPitch = THREE.MathUtils.clamp(this.cameraPitch + (lookA.y + lookB.y) * 0.004, -0.08, 0.8);
+    this.comfortCamera.applyLook(lookA, lookB, !this.isCameraInputEnabled());
 
     if (this.input.consumeAction('KeyR')) this.resetCurrentStage();
     if (this.input.consumeAction('Escape')) {
-      this.ui.showPicker(false);
+      this.showGravityPicker(false);
+      this.ui.showSettings(false);
       this.clearGravityPreview();
       this.container.querySelector('[data-help]').classList.add('hidden');
     }
@@ -217,15 +242,22 @@ export class Game {
     const moveY = THREE.MathUtils.clamp(keyboard.y + this.touch.move.y, -1, 1);
     const length = Math.hypot(moveX, moveY);
     const speed = keyboard.sprint ? CONFIG.player.sprintSpeed : CONFIG.player.speed;
-    const forward = new THREE.Vector3(-Math.sin(this.cameraYaw), 0, -Math.cos(this.cameraYaw));
-    const right = new THREE.Vector3(Math.cos(this.cameraYaw), 0, -Math.sin(this.cameraYaw));
-    const desired = forward.multiplyScalar(moveY).add(right.multiplyScalar(moveX));
-    if (length > 1) desired.normalize();
-    desired.multiplyScalar(speed);
-    const blend = 1 - Math.exp(-CONFIG.player.acceleration * delta);
-    this.player.body.velocity.x = THREE.MathUtils.lerp(this.player.body.velocity.x, desired.x, blend);
-    this.player.body.velocity.z = THREE.MathUtils.lerp(this.player.body.velocity.z, desired.z, blend);
-    this.player.body.applyForce(new CANNON.Vec3(0, -this.player.body.mass * CONFIG.player.gravity, 0));
+    const yaw = this.comfortCamera.yaw;
+    this.moveForward.set(-Math.sin(yaw), 0, -Math.cos(yaw)).multiplyScalar(moveY);
+    this.moveRight.set(Math.cos(yaw), 0, -Math.sin(yaw)).multiplyScalar(moveX);
+    this.desiredMovement.copy(this.moveForward).add(this.moveRight);
+    if (length > 1) this.desiredMovement.normalize();
+    this.desiredMovement.multiplyScalar(speed);
+
+    const currentDotDesired = this.player.body.velocity.x * this.desiredMovement.x
+      + this.player.body.velocity.z * this.desiredMovement.z;
+    const response = length < 0.04
+      ? CONFIG.player.deceleration
+      : (currentDotDesired < -0.1 ? CONFIG.player.turnAcceleration : CONFIG.player.acceleration);
+    this.player.body.velocity.x = THREE.MathUtils.damp(this.player.body.velocity.x, this.desiredMovement.x, response, delta);
+    this.player.body.velocity.z = THREE.MathUtils.damp(this.player.body.velocity.z, this.desiredMovement.z, response, delta);
+    this.playerDownForce.set(0, -this.player.body.mass * CONFIG.player.gravity, 0);
+    this.player.body.applyForce(this.playerDownForce);
 
     const planarSpeedSq = this.player.body.velocity.x ** 2 + this.player.body.velocity.z ** 2;
     if (planarSpeedSq > 0.08) {
@@ -258,7 +290,7 @@ export class Game {
     this.ui.bounceSteal();
     this.ui.toast('GRAVITY STOLEN!　重力をぬすんだ！', 'teal');
     this.vibrate(15);
-    this.setStageTimeout(() => this.ui.showPicker(true), 180);
+    this.setStageTimeout(() => this.showGravityPicker(true), 180);
   }
 
   chooseGravity(id) {
@@ -267,7 +299,7 @@ export class Game {
     if (!box.setGravity(id)) return;
     const direction = GRAVITY_DIRECTIONS.find((item) => item.id === id);
     this.heldBox = null;
-    this.ui.showPicker(false);
+    this.showGravityPicker(false);
     this.clearGravityPreview();
     this.ui.updateStatus(box, null);
     this.ui.toast(`${direction.label} 重力を向けた！`, 'gold');
@@ -287,6 +319,54 @@ export class Game {
 
   clearGravityPreview() {
     this.runtime?.clearPreview();
+  }
+
+  showGravityPicker(show) {
+    this.pickerOpen = show;
+    if (show) this.touch?.reset();
+    this.ui.showPicker(show);
+    this.refreshCameraInputState();
+  }
+
+  setSettingsVisibility(show) {
+    this.settingsOpen = show;
+    if (show) {
+      this.touch?.reset();
+      this.input?.cancelLook();
+    }
+    this.refreshCameraInputState();
+  }
+
+  isCameraInputEnabled() {
+    return !this.transitioning
+      && !this.pickerOpen
+      && !this.settingsOpen
+      && (!this.clear || this.freePlay);
+  }
+
+  refreshCameraInputState() {
+    const enabled = this.isCameraInputEnabled();
+    this.input?.setCameraEnabled(enabled);
+    this.touch?.setCameraEnabled(enabled);
+  }
+
+  setMotionComfort(enabled) {
+    this.cameraSettings.motionComfort = Boolean(enabled);
+    this.applyCameraSettings();
+  }
+
+  setCameraSensitivity(value) {
+    this.cameraSettings = normalizeCameraSettings({
+      ...this.cameraSettings,
+      sensitivity: value,
+    }, this.isTouchDevice);
+    this.applyCameraSettings();
+  }
+
+  applyCameraSettings() {
+    this.comfortCamera.setSettings(this.cameraSettings);
+    this.ui.setCameraSettings(this.cameraSettings);
+    this.saveCameraSettings();
   }
 
   updateBoxTarget() {
@@ -399,28 +479,16 @@ export class Game {
       const final = this.currentStageIndex === STAGE_COUNT - 1;
       this.highestStage = Math.max(this.highestStage, Math.min(STAGE_COUNT, this.stage.id + 1));
       this.saveProgress(this.stage.id, this.highestStage);
+      this.ui.showSettings(false);
       this.ui.showClear(true, { final, stageName: this.stage.name });
       this.ui.setStealState(false);
+      this.refreshCameraInputState();
       this.vibrate(50);
     }
   }
 
   updateCamera(delta) {
-    const target = new THREE.Vector3(this.player.body.position.x, this.player.body.position.y + 0.28, this.player.body.position.z);
-    const horizontal = Math.cos(this.cameraPitch) * this.cameraDistance;
-    const desired = new THREE.Vector3(
-      target.x + Math.sin(this.cameraYaw) * horizontal,
-      target.y + Math.sin(this.cameraPitch) * this.cameraDistance + 0.65,
-      target.z + Math.cos(this.cameraYaw) * horizontal,
-    );
-    const roomLimitX = this.stage.room.width / 2 - 0.45;
-    const roomLimitZ = this.stage.room.depth / 2 - 0.45;
-    desired.x = THREE.MathUtils.clamp(desired.x, -roomLimitX, roomLimitX);
-    desired.y = THREE.MathUtils.clamp(desired.y, 0.55, this.stage.room.height - 0.35);
-    desired.z = THREE.MathUtils.clamp(desired.z, -roomLimitZ, roomLimitZ);
-    const smooth = 1 - Math.exp(-8 * delta);
-    this.camera.position.lerp(desired, smooth);
-    this.camera.lookAt(target);
+    this.comfortCamera.update(this.player.body.position, delta);
   }
 
   updateInteraction() {
@@ -450,6 +518,7 @@ export class Game {
     this.ui.showClear(false);
     this.player.body.wakeUp();
     this.boxes.forEach((box) => box.body.wakeUp());
+    this.refreshCameraInputState();
     this.ui.toast('ステージ5で自由に遊べるよ！', 'green');
   }
 
@@ -512,6 +581,26 @@ export class Game {
   clearStageTimers() {
     this.stageTimers.forEach((timer) => clearTimeout(timer));
     this.stageTimers.clear();
+  }
+
+  readCameraSettings() {
+    try {
+      const comfortRaw = localStorage.getItem(CONFIG.storage.motionComfort);
+      const sensitivityRaw = localStorage.getItem(CONFIG.storage.cameraSensitivity);
+      const motionComfort = comfortRaw === null ? true : comfortRaw !== '0';
+      return normalizeCameraSettings({ motionComfort, sensitivity: sensitivityRaw }, this.isTouchDevice);
+    } catch {
+      return normalizeCameraSettings(null, this.isTouchDevice);
+    }
+  }
+
+  saveCameraSettings() {
+    try {
+      localStorage.setItem(CONFIG.storage.motionComfort, this.cameraSettings.motionComfort ? '1' : '0');
+      localStorage.setItem(CONFIG.storage.cameraSensitivity, this.cameraSettings.sensitivity);
+    } catch {
+      // Comfort settings remain active for the current session when storage is unavailable.
+    }
   }
 
   readProgress() {

@@ -5,6 +5,8 @@ export class InputController {
     this.lookDelta = { x: 0, y: 0 };
     this.actions = new Set();
     this.dragging = false;
+    this.cameraEnabled = true;
+    this.pointerId = null;
     this.lastPointer = { x: 0, y: 0 };
 
     window.addEventListener('keydown', (event) => {
@@ -13,21 +15,33 @@ export class InputController {
       if (!event.repeat) this.actions.add(event.code);
     });
     window.addEventListener('keyup', (event) => this.keys.delete(event.code));
-    window.addEventListener('blur', () => this.keys.clear());
+    window.addEventListener('blur', () => this.reset());
 
     element.addEventListener('pointerdown', (event) => {
-      if (event.pointerType === 'touch') return;
+      if (!this.cameraEnabled || event.pointerType === 'touch' || this.dragging) return;
       this.dragging = true;
-      this.lastPointer = { x: event.clientX, y: event.clientY };
+      this.pointerId = event.pointerId;
+      this.lastPointer.x = event.clientX;
+      this.lastPointer.y = event.clientY;
       element.setPointerCapture?.(event.pointerId);
     });
     element.addEventListener('pointermove', (event) => {
-      if (!this.dragging || event.pointerType === 'touch') return;
+      if (!this.cameraEnabled || !this.dragging || event.pointerId !== this.pointerId) return;
       this.lookDelta.x += event.clientX - this.lastPointer.x;
       this.lookDelta.y += event.clientY - this.lastPointer.y;
-      this.lastPointer = { x: event.clientX, y: event.clientY };
+      this.lastPointer.x = event.clientX;
+      this.lastPointer.y = event.clientY;
     });
-    element.addEventListener('pointerup', () => { this.dragging = false; });
+    const stopDrag = (event) => {
+      if (event.pointerId !== this.pointerId) return;
+      this.dragging = false;
+      this.pointerId = null;
+      this.lookDelta.x = 0;
+      this.lookDelta.y = 0;
+    };
+    element.addEventListener('pointerup', stopDrag);
+    element.addEventListener('pointercancel', stopDrag);
+    element.addEventListener('lostpointercapture', stopDrag);
     element.addEventListener('contextmenu', (event) => event.preventDefault());
   }
 
@@ -46,17 +60,27 @@ export class InputController {
   }
 
   consumeLook() {
-    const value = { ...this.lookDelta };
+    const value = { x: this.lookDelta.x, y: this.lookDelta.y };
     this.lookDelta.x = 0;
     this.lookDelta.y = 0;
     return value;
   }
 
+  setCameraEnabled(enabled) {
+    this.cameraEnabled = enabled;
+    if (!enabled) this.cancelLook();
+  }
+
+  cancelLook() {
+    this.dragging = false;
+    this.pointerId = null;
+    this.lookDelta.x = 0;
+    this.lookDelta.y = 0;
+  }
+
   reset() {
     this.keys.clear();
     this.actions.clear();
-    this.lookDelta.x = 0;
-    this.lookDelta.y = 0;
-    this.dragging = false;
+    this.cancelLook();
   }
 }

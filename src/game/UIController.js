@@ -16,6 +16,28 @@ export class UIController {
           <div class="status-row"><span>ぬすんだ重力</span><strong data-held-status>なし</strong></div>
         </aside>
         <button class="reset-button" data-reset aria-label="現在のステージをリセット">↻ <span>リセット</span></button>
+        <button class="settings-button" data-settings-toggle aria-label="カメラ設定" aria-expanded="false">⚙</button>
+        <section class="camera-settings hidden" data-camera-settings aria-hidden="true" data-no-camera>
+          <div class="camera-settings-head">
+            <div><strong>酔いにくいモード</strong><small>Motion Comfort</small></div>
+            <button data-settings-close aria-label="設定を閉じる">×</button>
+          </div>
+          <label class="comfort-switch">
+            <input type="checkbox" data-motion-comfort />
+            <span aria-hidden="true"></span>
+            <b data-comfort-label>ON</b>
+          </label>
+          <div class="sensitivity-setting">
+            <span>カメラ感度</span>
+            <div class="sensitivity-options" role="group" aria-label="カメラ感度">
+              <button data-sensitivity="low">低い</button>
+              <button data-sensitivity="normal">ふつう</button>
+              <button data-sensitivity="high">高い</button>
+            </div>
+          </div>
+          <p>右側をドラッグしてカメラを回します</p>
+        </section>
+        <div class="comfort-dot" data-comfort-dot aria-hidden="true"></div>
         <div class="toast" data-toast></div>
         <div class="interaction" data-interaction><kbd>E</kbd><span>重力をぬすむ</span></div>
         <div class="help" data-help>
@@ -77,6 +99,12 @@ export class UIController {
     this.interactionLabel = this.interaction.querySelector('span');
     this.stealButton = root.querySelector('[data-touch-action="steal"]');
     this.picker = root.querySelector('[data-picker]');
+    this.settingsButton = root.querySelector('[data-settings-toggle]');
+    this.settingsPanel = root.querySelector('[data-camera-settings]');
+    this.motionComfortInput = root.querySelector('[data-motion-comfort]');
+    this.comfortLabel = root.querySelector('[data-comfort-label]');
+    this.comfortDot = root.querySelector('[data-comfort-dot]');
+    this.settingsOpen = false;
     this.toastElement = root.querySelector('[data-toast]');
     this.clearScreen = root.querySelector('[data-clear]');
     this.fade = root.querySelector('[data-stage-fade]');
@@ -93,6 +121,12 @@ export class UIController {
     root.querySelector('[data-replay]').addEventListener('click', callbacks.reset);
     root.querySelector('[data-restart-all]').addEventListener('click', callbacks.restartAll);
     root.querySelector('[data-free-play]').addEventListener('click', callbacks.freePlay);
+    this.settingsButton.addEventListener('click', () => this.showSettings(!this.settingsOpen));
+    root.querySelector('[data-settings-close]').addEventListener('click', () => this.showSettings(false));
+    this.motionComfortInput.addEventListener('change', () => callbacks.setMotionComfort(this.motionComfortInput.checked));
+    root.querySelectorAll('[data-sensitivity]').forEach((button) => {
+      button.addEventListener('click', () => callbacks.setCameraSensitivity(button.dataset.sensitivity));
+    });
 
     root.querySelectorAll('[data-direction]').forEach((button) => {
       const id = button.dataset.direction;
@@ -151,10 +185,12 @@ export class UIController {
 
   showPicker(show) {
     this.picker.classList.toggle('visible', show);
+    this.root.classList.toggle('gravity-picker-open', show);
   }
 
   showClear(show, { final = false, stageName = '' } = {}) {
     this.clearScreen.classList.toggle('visible', show);
+    this.root.classList.toggle('clear-screen-open', show);
     if (!show) return;
     this.clearTitle.textContent = final ? 'ALL STAGES CLEAR!' : 'STAGE CLEAR!';
     this.clearStage.textContent = final ? '重力泥棒マスター！' : stageName;
@@ -167,6 +203,26 @@ export class UIController {
     this.fade.classList.toggle('visible', show);
   }
 
+  showSettings(show) {
+    this.settingsOpen = show;
+    this.settingsPanel.classList.toggle('hidden', !show);
+    this.settingsPanel.setAttribute('aria-hidden', String(!show));
+    this.settingsButton.setAttribute('aria-expanded', String(show));
+    this.root.classList.toggle('camera-settings-open', show);
+    this.callbacks.settingsVisibility(show);
+  }
+
+  setCameraSettings({ motionComfort, sensitivity }) {
+    this.motionComfortInput.checked = motionComfort;
+    this.comfortLabel.textContent = motionComfort ? 'ON' : 'OFF';
+    this.comfortDot.classList.toggle('hidden', !motionComfort);
+    this.root.querySelectorAll('[data-sensitivity]').forEach((button) => {
+      const selected = button.dataset.sensitivity === sensitivity;
+      button.classList.toggle('selected', selected);
+      button.setAttribute('aria-pressed', String(selected));
+    });
+  }
+
   toast(message, tone = 'teal') {
     clearTimeout(this.toastTimer);
     this.toastElement.textContent = message;
@@ -177,6 +233,7 @@ export class UIController {
 
   resetTransient() {
     clearTimeout(this.toastTimer);
+    this.showSettings(false);
     this.showPicker(false);
     this.showClear(false);
     this.showInteraction(false);
