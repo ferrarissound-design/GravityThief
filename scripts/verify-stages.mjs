@@ -19,6 +19,14 @@ function makeWorld() {
 assert(STAGE_COUNT === 5, `Expected 5 stages, received ${STAGE_COUNT}`);
 assert(new Set(STAGE_DEFINITIONS.map((stage) => stage.name)).size === 5, 'Stage names must be unique');
 assert(new Set(STAGE_DEFINITIONS.map((stage) => stage.palette.background)).size === 5, 'Every stage needs a distinct palette');
+assert(
+  STAGE_DEFINITIONS.map((stage) => stage.name).join('|') === 'はじめの一歩|壁をこえろ|重力の曲がり角|ふたつの重力|重力コア',
+  'Campaign order must stay fixed from easiest to hardest',
+);
+assert(
+  STAGE_DEFINITIONS.map((stage) => stage.boxes.length).join(',') === '1,1,1,2,2',
+  'Campaign complexity must increase from single-box to multi-box stages',
+);
 
 const scene = new THREE.Scene();
 const { world, materials } = makeWorld();
@@ -70,9 +78,9 @@ for (const stage of STAGE_DEFINITIONS) {
   runtime.boxes.forEach((box) => box.body.position.set(0, stage.room.height - 1, 0));
   Game.prototype.updateSwitches.call(gameState, 0.35);
   Game.prototype.updateDoors.call(gameState, 0.2);
-  if (stage.id === 3) {
-    assert(runtime.switches.every((item) => !item.active), 'Stage 3: hold switches did not release');
-    assert(runtime.doors.every((item) => !item.open), 'Stage 3: door did not close after hold switches released');
+  if (stage.id === 4) {
+    assert(runtime.switches.every((item) => !item.active), 'Stage 4: hold switches did not release');
+    assert(runtime.doors.every((item) => !item.open), 'Stage 4: door did not close after hold switches released');
   }
   if (stage.id === 5) {
     assert(runtime.switches[0].active, 'Stage 5: latch switch did not stay active');

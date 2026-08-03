@@ -40,7 +40,7 @@ function doorway(roomWidth, roomHeight, z, openingWidth, doorHeight, color, glas
   ];
 }
 
-export const STAGE_DEFINITIONS = [
+const STAGE_LIBRARY = [
   {
     id: 1,
     name: 'はじめの一歩',
@@ -156,6 +156,25 @@ export const STAGE_DEFINITIONS = [
     ],
   },
 ];
+
+// Puzzle definitions stay independent from campaign order. The campaign always
+// progresses from the simplest single-box lesson to the two-box challenges.
+export const FIXED_DIFFICULTY_ORDER = [1, 2, 4, 3, 5];
+const CAMPAIGN_PALETTES = [palettes.toy, palettes.mint, palettes.candy, palettes.sky, palettes.core];
+
+export const STAGE_DEFINITIONS = FIXED_DIFFICULTY_ORDER.map((sourceId, index) => {
+  const source = STAGE_LIBRARY.find((stage) => stage.id === sourceId);
+  const palette = CAMPAIGN_PALETTES[index];
+  return {
+    ...source,
+    id: index + 1,
+    palette,
+    boxes: source.boxes.map((box) => index < 4 ? { ...box, color: palette.box } : { ...box }),
+    obstacles: source.obstacles.map((obstacle) => /-(left|right|top)$/.test(obstacle.id)
+      ? { ...obstacle, color: palette.wall }
+      : { ...obstacle }),
+  };
+});
 
 export const STAGE_COUNT = STAGE_DEFINITIONS.length;
 
