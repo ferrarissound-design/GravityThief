@@ -91,6 +91,11 @@ export class GravityBox {
     this.burst(0xffd177);
   }
 
+  isAtCeiling() {
+    const restingHeight = CONFIG.room.height - this.size / 2;
+    return this.body.position.y >= restingHeight - 0.3;
+  }
+
   updateArrow() {
     this.arrow.visible = Boolean(this.gravityDirection);
     this.halo.visible = !this.gravityDirection;
