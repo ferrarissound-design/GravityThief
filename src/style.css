@@ -13,6 +13,8 @@
   --gold: #ffd36d;
   --panel: rgba(255, 252, 239, 0.9);
   --shadow: 0 14px 40px rgba(65, 77, 88, 0.2), 0 3px 10px rgba(65, 77, 88, 0.12);
+  --stage-accent: #19b9aa;
+  --stage-bg: #ccefff;
 }
 
 * { box-sizing: border-box; }
@@ -84,19 +86,22 @@ canvas { display: block; width: 100% !important; height: 100% !important; touch-
 
 .eyebrow,
 .picker-eyebrow {
-  color: var(--teal-dark);
+  color: var(--stage-accent);
   font-size: 10px;
   letter-spacing: .2em;
   font-weight: 900;
 }
 
+.stage-line { display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--stage-accent); font-size: 10px; letter-spacing: .13em; font-weight: 900; }
+.stage-line strong { color: var(--ink); font-size: 13px; letter-spacing: .04em; }
+
 .objective { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 5px; font-weight: 800; font-size: clamp(13px, 1.5vw, 17px); }
-.objective-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--orange); box-shadow: 0 0 0 5px rgba(244,162,82,.2); flex: none; }
+.objective-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--stage-accent); box-shadow: 0 0 0 5px color-mix(in srgb, var(--stage-accent) 20%, transparent); flex: none; }
 
 .status-card {
   top: clamp(12px, 2.3vw, 24px);
   left: clamp(12px, 2.3vw, 24px);
-  width: 175px;
+  width: 185px;
   padding: 12px 15px;
   border-radius: 17px;
   background: var(--panel);
@@ -199,6 +204,12 @@ kbd { font-family: inherit; font-weight: 900; border-radius: 6px; color: white; 
   transition: opacity .2s, visibility .2s;
   pointer-events: auto;
 }
+.gravity-picker {
+  place-items: center end;
+  padding-inline: clamp(18px, 5vw, 72px);
+  background: linear-gradient(90deg, rgba(31, 49, 59, .08), rgba(31, 49, 59, .28));
+  backdrop-filter: blur(1.5px);
+}
 .gravity-picker.visible,
 .clear-screen.visible { opacity: 1; visibility: visible; }
 
@@ -214,12 +225,18 @@ kbd { font-family: inherit; font-weight: 900; border-radius: 6px; color: white; 
   transform: translateY(14px) scale(.97);
   transition: transform .24s cubic-bezier(.2,.8,.2,1);
 }
+.picker-panel {
+  width: min(470px, 100%);
+  max-height: calc(100dvh - 36px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
 .visible .picker-panel,
 .visible .clear-panel { transform: translateY(0) scale(1); }
 .picker-panel h2 { margin: 7px 0 22px; font-size: clamp(23px, 4vw, 34px); }
 .picker-panel > p { color: var(--muted); font-size: 12px; margin: 17px 0 0; }
 
-.direction-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.direction-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
 .direction-grid button {
   position: relative;
   min-height: 106px;
@@ -236,13 +253,15 @@ kbd { font-family: inherit; font-weight: 900; border-radius: 6px; color: white; 
   transition: .16s;
   box-shadow: 0 6px 0 #e9dfca;
 }
-.direction-grid button:hover { border-color: #75d7ce; transform: translateY(-3px); box-shadow: 0 9px 0 #c5ebe6; }
+.direction-grid button:hover,
+.direction-grid button:focus-visible { border-color: var(--stage-accent); transform: translateY(-3px); box-shadow: 0 9px 0 color-mix(in srgb, var(--stage-accent) 28%, white); outline: none; }
 .direction-grid button:active { transform: translateY(3px); box-shadow: 0 3px 0 #c5ebe6; }
 .direction-grid small { position: absolute; right: 10px; top: 9px; width: 22px; line-height: 22px; border-radius: 6px; background: #edf0ed; color: #718083; font-weight: 900; }
-.direction-icon { color: var(--teal); font-size: 29px; line-height: 1; }
+.direction-icon { color: var(--stage-accent); font-size: 29px; line-height: 1; }
 .direction-down { transform: rotate(90deg); }
 .direction-up { transform: rotate(-90deg); }
 .direction-left { transform: rotate(180deg); }
+.direction-right { transform: none; }
 .direction-back { transform: rotate(-45deg); }
 .direction-front { transform: rotate(45deg); }
 
@@ -251,38 +270,83 @@ kbd { font-family: inherit; font-weight: 900; border-radius: 6px; color: white; 
 .clear-star { color: #f4b43e; font-size: 64px; filter: drop-shadow(0 8px 12px rgba(211,139,27,.25)); animation: starPulse 1.2s ease-in-out infinite alternate; }
 @keyframes starPulse { to { transform: scale(1.15) rotate(8deg); } }
 .clear-panel h1 { font-size: clamp(34px, 6vw, 54px); margin: 4px 0 8px; }
+.clear-panel h2 { margin: 0 0 10px; color: var(--stage-accent); font-size: clamp(20px, 4vw, 30px); }
 .clear-panel p { color: var(--muted); margin: 0 0 25px; }
 .clear-actions { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
 .clear-actions button { border: 0; border-radius: 14px; padding: 13px 22px; background: var(--teal); color: white; font-weight: 900; cursor: pointer; box-shadow: 0 5px 0 var(--teal-dark); }
 .clear-actions button.secondary { background: #fff; color: var(--ink); border: 2px solid #e6dac4; box-shadow: 0 4px 0 #e6dac4; }
 
+.hidden { display: none !important; }
+
+.stage-fade {
+  position: absolute;
+  z-index: 50;
+  inset: 0;
+  background: #10172a;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity .23s ease, visibility .23s ease;
+}
+.stage-fade.visible { opacity: 1; visibility: visible; pointer-events: auto; }
+
 .touch-ui { display: none; }
 
 @media (pointer: coarse), (max-width: 720px) {
-  .objective-card { min-width: 0; width: calc(100% - 140px); left: 12px; transform: none; text-align: left; padding: 9px 12px; }
+  .objective-card { min-width: 0; width: calc(100% - 132px); left: 10px; transform: none; text-align: left; padding: 8px 10px 9px; }
+  .stage-line { justify-content: flex-start; gap: 6px; font-size: 8px; letter-spacing: .08em; }
+  .stage-line strong { font-size: 11px; }
   .eyebrow { display: none; }
-  .objective { justify-content: flex-start; font-size: 11px; }
-  .status-card { top: auto; left: 12px; bottom: 12px; width: 145px; padding: 9px 11px; }
+  .objective { justify-content: flex-start; gap: 7px; margin-top: 3px; font-size: 10px; line-height: 1.25; }
+  .objective-dot { width: 8px; height: 8px; }
+  .status-card { top: 82px; left: 10px; bottom: auto; width: 134px; padding: 8px 9px; }
   .status-row { font-size: 10px; }
-  .status-row strong { font-size: 11px; }
+  .status-row + .status-row { margin-top: 5px; padding-top: 5px; }
+  .status-row strong { font-size: 10px; }
   .reset-button { padding: 10px 12px; }
   .reset-button span { display: none; }
   .help { display: none; }
-  .toast { top: 76px; font-size: 13px; }
+  .toast { top: 72px; max-width: calc(100% - 28px); white-space: nowrap; font-size: 12px; }
   .interaction { display: none; }
   .direction-grid { grid-template-columns: repeat(2, 1fr); }
-  .direction-grid button { min-height: 82px; }
+  .gravity-picker {
+    place-items: end center;
+    padding: 12px;
+    background: linear-gradient(180deg, rgba(31, 49, 59, .04), rgba(31, 49, 59, .3));
+    backdrop-filter: none;
+  }
+  .picker-panel { width: 100%; padding: 18px; border-radius: 22px; }
+  .direction-grid { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .picker-panel h2 { margin: 5px 0 14px; font-size: 22px; }
+  .direction-grid { gap: 9px; }
+  .direction-grid button { min-height: 74px; border-radius: 15px; }
+  .direction-icon { font-size: 24px; }
+  .touch-mode .direction-grid small,
+  .touch-mode [data-keyboard-hint] { display: none; }
   .touch-mode .touch-ui { display: block; }
   .touch-ui { position: absolute; inset: 0; z-index: 7; pointer-events: none; }
   .look-area { position: absolute; right: 0; top: 70px; bottom: 0; width: 56%; pointer-events: auto; touch-action: none; }
   .joystick { position: absolute; left: 18px; bottom: 82px; width: 122px; height: 122px; border-radius: 50%; background: rgba(255,255,255,.2); border: 2px solid rgba(255,255,255,.46); box-shadow: inset 0 0 0 14px rgba(37,59,70,.08); pointer-events: auto; touch-action: none; }
   .joystick-knob { position: absolute; width: 52px; height: 52px; left: 33px; top: 33px; border-radius: 50%; background: rgba(255,255,255,.83); box-shadow: 0 4px 15px rgba(27,50,64,.25); }
-  .touch-button { position: absolute; z-index: 2; right: 22px; width: 67px; height: 67px; border-radius: 50%; border: 2px solid rgba(255,255,255,.78); color: white; background: rgba(40,55,74,.76); box-shadow: 0 7px 20px rgba(27,50,64,.24); font-size: 24px; font-weight: 900; pointer-events: auto; touch-action: none; }
+  .touch-button { position: absolute; z-index: 2; right: 20px; width: 72px; height: 72px; border-radius: 50%; border: 2px solid rgba(255,255,255,.78); color: white; background: rgba(40,55,74,.76); box-shadow: 0 7px 20px rgba(27,50,64,.24); font-size: 24px; font-weight: 900; pointer-events: auto; touch-action: none; transition: opacity .2s, filter .2s, transform .2s, background .2s; }
   .touch-button span { display: block; font-size: 8px; letter-spacing: .08em; }
   .touch-button.jump { bottom: 86px; }
-  .touch-button.steal { bottom: 164px; background: rgba(15,151,140,.86); }
-  .touch-button.steal.recovery { background: rgba(222, 122, 41, .92); }
+  .touch-button.steal { bottom: 168px; background: rgba(85,101,112,.7); opacity: .46; filter: saturate(.35); }
+  .touch-button.steal:disabled { pointer-events: none; }
+  .touch-button.steal.available { background: color-mix(in srgb, var(--stage-accent) 82%, #075f65); opacity: 1; filter: none; transform: scale(1.06); box-shadow: 0 0 0 7px color-mix(in srgb, var(--stage-accent) 18%, transparent), 0 8px 24px rgba(27,50,64,.3); animation: stealPulse 1.55s ease-in-out infinite; }
+  .touch-button.steal.recovery { background: rgba(222, 122, 41, .94); }
+  .touch-button.steal.stolen { animation: stealBounce .34s ease-out; }
+  .touch-button.steal.attention { animation: stealAttention .46s ease-in-out 4; }
 }
+
+@media (pointer: coarse) {
+  .direction-grid small,
+  [data-keyboard-hint] { display: none; }
+}
+
+@keyframes stealPulse { 50% { transform: scale(1.11); filter: brightness(1.12); } }
+@keyframes stealBounce { 45% { transform: scale(1.24); } }
+@keyframes stealAttention { 50% { transform: scale(1.2); box-shadow: 0 0 0 12px color-mix(in srgb, var(--gold) 34%, transparent); } }
 
 @media (max-height: 600px) and (pointer: coarse) {
   .joystick { bottom: 18px; width: 104px; height: 104px; }

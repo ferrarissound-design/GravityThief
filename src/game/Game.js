@@ -1,12 +1,11 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { CONFIG, GRAVITY_DIRECTIONS } from './config.js';
-import { createRoom } from './createRoom.js';
-import { createPlayer } from './createPlayer.js';
-import { GravityBox } from './GravityBox.js';
 import { InputController } from './InputController.js';
 import { TouchControls } from './TouchControls.js';
 import { UIController } from './UIController.js';
+import { getStageDefinition, STAGE_COUNT } from './stages/stageDefinitions.js';
+import { loadStage } from './stages/stageLoader.js';
 
 export class Game {
   constructor(container) {
@@ -14,20 +13,20 @@ export class Game {
     this.fixedStep = 1 / 60;
     this.maxSubSteps = 4;
     this.lastTime = performance.now() / 1000;
-    this.cameraYaw = 0;
-    this.cameraPitch = 0.16;
-    this.cameraDistance = 6.5;
-    this.doorOpen = false;
+    this.stageTimers = new Set();
+    this.transitioning = false;
     this.clear = false;
     this.freePlay = false;
-    this.switchPressed = false;
+    this.activeBox = null;
+    this.heldBox = null;
+    this.lastStatusKey = '';
+    this.repeatHintArmed = false;
+    this.repeatHintBox = null;
+    this.repeatHintDelay = 0;
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0xccefff);
-    this.scene.fog = new THREE.Fog(0xccefff, 18, 36);
-
     const viewport = this.getViewportSize();
-    this.camera = new THREE.PerspectiveCamera(58, viewport.width / viewport.height, 0.1, 80);
+    this.camera = new THREE.PerspectiveCamera(58, viewport.width / viewport.height, 0.1, 90);
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     this.renderer.setSize(viewport.width, viewport.height, false);
@@ -40,39 +39,40 @@ export class Game {
 
     this.setupLighting();
     this.setupPhysics();
-    this.room = createRoom(this.scene, this.world, this.floorMaterial);
-    this.player = createPlayer(this.scene, this.world, this.playerMaterial);
-    this.box = new GravityBox(this.scene, this.world, this.boxMaterial);
-    this.createSwitch();
-    this.createGoal();
-
     this.input = new InputController(this.renderer.domElement);
     this.ui = new UIController(container, {
-      reset: () => this.reset(),
+      reset: () => this.resetCurrentStage(),
+      nextStage: () => this.nextStage(),
+      restartAll: () => this.transitionToStage(0),
       freePlay: () => this.enableFreePlay(),
       chooseGravity: (id) => this.chooseGravity(id),
+      previewGravity: (id) => this.previewGravity(id),
+      clearPreview: () => this.clearGravityPreview(),
     });
     this.touch = new TouchControls(container);
 
     window.addEventListener('resize', () => this.resize());
     window.visualViewport?.addEventListener('resize', () => this.resize());
     document.addEventListener('visibilitychange', () => { this.lastTime = performance.now() / 1000; });
-    this.reset();
+
+    const progress = this.readProgress();
+    this.highestStage = progress.highest;
+    this.loadStage(progress.current - 1);
   }
 
   setupLighting() {
-    this.scene.add(new THREE.HemisphereLight(0xf7fcff, 0xc69568, 2.25));
-    const sun = new THREE.DirectionalLight(0xfff0d2, 3.1);
-    sun.position.set(-8, 13, 8);
-    sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
-    sun.shadow.camera.left = -14;
-    sun.shadow.camera.right = 14;
-    sun.shadow.camera.top = 14;
-    sun.shadow.camera.bottom = -14;
-    sun.shadow.camera.near = 1;
-    sun.shadow.camera.far = 36;
-    this.scene.add(sun);
+    this.hemisphere = new THREE.HemisphereLight(0xf7fcff, 0xc69568, 2.25);
+    this.sun = new THREE.DirectionalLight(0xfff0d2, 3.1);
+    this.sun.position.set(-8, 13, 8);
+    this.sun.castShadow = true;
+    this.sun.shadow.mapSize.set(1536, 1536);
+    this.sun.shadow.camera.left = -15;
+    this.sun.shadow.camera.right = 15;
+    this.sun.shadow.camera.top = 15;
+    this.sun.shadow.camera.bottom = -15;
+    this.sun.shadow.camera.near = 1;
+    this.sun.shadow.camera.far = 40;
+    this.scene.add(this.hemisphere, this.sun);
   }
 
   setupPhysics() {
@@ -87,43 +87,6 @@ export class Game {
     this.world.addContactMaterial(new CANNON.ContactMaterial(this.playerMaterial, this.boxMaterial, { friction: 0.18, restitution: 0 }));
   }
 
-  createSwitch() {
-    const [x, y, z] = CONFIG.switch.position;
-    const [w, h, d] = CONFIG.switch.size;
-    this.switchGroup = new THREE.Group();
-    const base = new THREE.Mesh(
-      new THREE.CylinderGeometry(w * 0.58, w * 0.64, 0.18, 28),
-      new THREE.MeshStandardMaterial({ color: 0xa94b3d, roughness: 0.62 }),
-    );
-    base.receiveShadow = true;
-    const plate = new THREE.Mesh(
-      new THREE.CylinderGeometry(w * 0.5, w * 0.54, h, 28),
-      new THREE.MeshStandardMaterial({ color: 0xff6a4d, emissive: 0x7f1c12, emissiveIntensity: 0.22, roughness: 0.45 }),
-    );
-    plate.name = 'switchPlate';
-    plate.position.y = 0.15;
-    plate.castShadow = true;
-    this.switchGroup.add(base, plate);
-    this.switchGroup.position.set(x, y, z);
-    this.scene.add(this.switchGroup);
-    this.switchPlate = plate;
-  }
-
-  createGoal() {
-    const [x, y, z] = CONFIG.goal.position;
-    const ringMaterial = new THREE.MeshStandardMaterial({ color: 0xffd56b, emissive: 0xb77919, emissiveIntensity: 0.72, roughness: 0.35 });
-    this.goalGroup = new THREE.Group();
-    const disc = new THREE.Mesh(new THREE.CylinderGeometry(CONFIG.goal.radius, CONFIG.goal.radius, 0.08, 48), new THREE.MeshStandardMaterial({ color: 0xffed9c, emissive: 0x90711e, emissiveIntensity: 0.4, transparent: true, opacity: 0.9 }));
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(CONFIG.goal.radius * 0.72, 0.13, 14, 48), ringMaterial);
-    ring.rotation.x = Math.PI / 2;
-    ring.position.y = 0.14;
-    this.goalBeam = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 1.35, 3.7, 32, 1, true), new THREE.MeshBasicMaterial({ color: 0xffedab, transparent: true, opacity: 0.15, side: THREE.DoubleSide, depthWrite: false }));
-    this.goalBeam.position.y = 1.85;
-    this.goalGroup.add(disc, ring, this.goalBeam);
-    this.goalGroup.position.set(x, y, z);
-    this.scene.add(this.goalGroup);
-  }
-
   start() {
     this.renderer.setAnimationLoop(() => this.tick());
   }
@@ -132,44 +95,123 @@ export class Game {
     const now = performance.now() / 1000;
     const delta = Math.min(0.05, now - this.lastTime);
     this.lastTime = now;
+    if (!this.runtime) return;
 
+    this.updateBoxTarget();
     this.handleInput();
     this.applyPlayerMovement(delta);
-    this.box.applyGravity();
+    this.boxes.forEach((box) => box.applyGravity());
     this.world.step(this.fixedStep, delta, this.maxSubSteps);
     this.syncObjects(delta);
-    this.updateSwitch(delta);
-    this.updateDoor(delta);
+    this.updateSwitches(delta);
+    this.updateDoors(delta);
     this.updateGoal(delta);
     this.updateCamera(delta);
     this.updateInteraction();
+    this.updateRepeatHint(delta);
     this.checkBounds();
     this.renderer.render(this.scene, this.camera);
+  }
+
+  loadStage(index) {
+    this.unloadStage();
+    this.currentStageIndex = Math.min(STAGE_COUNT - 1, Math.max(0, index));
+    this.stage = getStageDefinition(this.currentStageIndex);
+    this.applyTheme(this.stage);
+    this.runtime = loadStage({
+      scene: this.scene,
+      world: this.world,
+      stage: this.stage,
+      physicsMaterials: { floor: this.floorMaterial, player: this.playerMaterial, box: this.boxMaterial },
+      onBoxImpact: (_box, impact) => this.onBoxImpact(impact),
+    });
+    this.player = this.runtime.player;
+    this.boxes = this.runtime.boxes;
+    this.switches = this.runtime.switches;
+    this.doors = this.runtime.doors;
+    this.clear = false;
+    this.freePlay = false;
+    this.activeBox = null;
+    this.heldBox = null;
+    this.lastStatusKey = '';
+    this.cameraYaw = this.stage.camera.yaw;
+    this.cameraPitch = this.stage.camera.pitch;
+    this.cameraDistance = this.stage.camera.distance;
+    this.repeatHintArmed = false;
+    this.repeatHintBox = null;
+    this.repeatHintDelay = 0;
+    this.facePlayerToward(this.stage.doors[0]?.position ?? this.stage.goal.position);
+    this.updateCamera(1);
+    this.ui.resetTransient();
+    this.ui.setStage(this.stage, STAGE_COUNT);
+    this.ui.updateStatus(null, null);
+    this.input.reset?.();
+    this.touch.reset?.();
+    this.lastTime = performance.now() / 1000;
+
+    this.highestStage = Math.max(this.highestStage ?? 1, this.stage.id);
+    this.saveProgress(this.stage.id, this.highestStage);
+  }
+
+  unloadStage() {
+    this.clearStageTimers();
+    this.runtime?.dispose();
+    this.runtime = null;
+    this.player = null;
+    this.boxes = [];
+    this.switches = [];
+    this.doors = [];
+  }
+
+  transitionToStage(index) {
+    if (this.transitioning) return;
+    this.transitioning = true;
+    this.ui.showFade(true);
+    window.setTimeout(() => {
+      this.loadStage(index);
+      requestAnimationFrame(() => {
+        this.ui.showFade(false);
+        window.setTimeout(() => { this.transitioning = false; }, 260);
+      });
+    }, 230);
+  }
+
+  nextStage() {
+    if (this.currentStageIndex >= STAGE_COUNT - 1) return;
+    this.transitionToStage(this.currentStageIndex + 1);
+  }
+
+  resetCurrentStage() {
+    if (this.transitioning) return;
+    this.transitionToStage(this.currentStageIndex);
   }
 
   handleInput() {
     const lookA = this.input.consumeLook();
     const lookB = this.touch.consumeLook();
     this.cameraYaw -= (lookA.x + lookB.x) * 0.006;
-    this.cameraPitch = THREE.MathUtils.clamp(this.cameraPitch + (lookA.y + lookB.y) * 0.004, -0.08, 0.78);
+    this.cameraPitch = THREE.MathUtils.clamp(this.cameraPitch + (lookA.y + lookB.y) * 0.004, -0.08, 0.8);
 
-    if (this.input.consumeAction('KeyR')) this.reset();
+    if (this.input.consumeAction('KeyR')) this.resetCurrentStage();
     if (this.input.consumeAction('Escape')) {
       this.ui.showPicker(false);
+      this.clearGravityPreview();
       this.container.querySelector('[data-help]').classList.add('hidden');
     }
     if (this.input.consumeAction('KeyE') || this.touch.consumeAction('steal')) this.trySteal();
     if (this.input.consumeAction('Space') || this.touch.consumeAction('jump')) this.tryJump();
 
     GRAVITY_DIRECTIONS.forEach((direction) => {
+      if (!this.heldBox) return;
       if (this.input.consumeAction(`Digit${direction.key}`) || this.input.consumeAction(`Numpad${direction.key}`)) {
-        if (this.box.stolen) this.chooseGravity(direction.id);
+        this.previewGravity(direction.id);
+        this.setStageTimeout(() => this.chooseGravity(direction.id), 130);
       }
     });
   }
 
   applyPlayerMovement(delta) {
-    if (this.clear && !this.freePlay) return;
+    if ((this.clear && !this.freePlay) || this.transitioning) return;
     const keyboard = this.input.getMovement();
     const moveX = THREE.MathUtils.clamp(keyboard.x + this.touch.move.x, -1, 1);
     const moveY = THREE.MathUtils.clamp(keyboard.y + this.touch.move.y, -1, 1);
@@ -209,79 +251,157 @@ export class Game {
   }
 
   trySteal() {
-    if (this.clear && !this.freePlay) return;
-    const ceilingRecall = this.box.isAtCeiling();
-    if (this.distanceToBox() > CONFIG.box.interactionDistance && !ceilingRecall) {
-      this.ui.toast('箱に近づこう', 'soft');
-      return;
-    }
-    if (!this.box.gravityDirection) {
-      this.ui.toast('この箱はもう無重力だ', 'soft');
-      return;
-    }
-    if (this.box.steal()) {
-      this.ui.updateStatus(this.box.directionId, this.box.stolen);
-      this.ui.toast(ceilingRecall ? '天井の箱から重力を遠隔回収！' : '重力を盗んだ！', ceilingRecall ? 'gold' : 'teal');
-      window.setTimeout(() => this.ui.showPicker(true), 240);
-    }
+    if ((this.clear && !this.freePlay) || !this.activeBox || !this.activeBox.gravityDirection) return;
+    this.heldBox = this.activeBox;
+    if (!this.heldBox.steal(this.player.body.position)) return;
+    this.ui.updateStatus(this.activeBox, this.heldBox);
+    this.ui.bounceSteal();
+    this.ui.toast('GRAVITY STOLEN!　重力をぬすんだ！', 'teal');
+    this.vibrate(15);
+    this.setStageTimeout(() => this.ui.showPicker(true), 180);
   }
 
   chooseGravity(id) {
-    if (!this.box.stolen) return;
+    if (!this.heldBox) return;
+    const box = this.heldBox;
+    if (!box.setGravity(id)) return;
     const direction = GRAVITY_DIRECTIONS.find((item) => item.id === id);
-    this.box.setGravity(id);
+    this.heldBox = null;
     this.ui.showPicker(false);
-    this.ui.updateStatus(this.box.directionId, this.box.stolen);
-    this.ui.toast(`${direction.label} 重力をセット`, 'gold');
+    this.clearGravityPreview();
+    this.ui.updateStatus(box, null);
+    this.ui.toast(`${direction.label} 重力を向けた！`, 'gold');
+    this.vibrate(15);
+
+    if (this.stage.id === 1 && !this.repeatHintWasSeen()) {
+      this.repeatHintArmed = true;
+      this.repeatHintBox = box;
+      this.repeatHintDelay = 0.65;
+    }
   }
 
-  distanceToBox() {
-    return this.player.body.position.distanceTo(this.box.body.position);
+  previewGravity(id) {
+    if (!this.heldBox) return;
+    this.runtime.previewDirection(id, this.heldBox);
+  }
+
+  clearGravityPreview() {
+    this.runtime?.clearPreview();
+  }
+
+  updateBoxTarget() {
+    if (!this.player || !this.boxes.length) return;
+    const previous = this.activeBox;
+    if (this.heldBox) {
+      this.activeBox = this.heldBox;
+    } else {
+      const playerPosition = this.player.body.position;
+      const candidates = this.boxes.map((box) => {
+        const distance = box.body.position.distanceTo(playerPosition);
+        const recovery = box.isAtCeiling(this.stage.room.height);
+        const projected = box.group.position.clone().project(this.camera);
+        const visible = projected.z >= -1 && projected.z <= 1;
+        return { box, distance, recovery, center: visible ? Math.hypot(projected.x, projected.y) : 99 };
+      }).filter((candidate) => candidate.distance <= CONFIG.box.interactionDistance || candidate.recovery);
+      candidates.sort((a, b) => Math.abs(a.center - b.center) > 0.08 ? a.center - b.center : a.distance - b.distance);
+      this.activeBox = candidates[0]?.box ?? null;
+    }
+
+    this.boxes.forEach((box) => box.setTargeted(box === this.activeBox));
+    const statusKey = `${this.activeBox?.id ?? 'none'}:${this.activeBox?.directionId ?? 'none'}:${this.heldBox?.id ?? 'none'}`;
+    if (previous !== this.activeBox || statusKey !== this.lastStatusKey) {
+      this.lastStatusKey = statusKey;
+      this.ui.updateStatus(this.activeBox, this.heldBox);
+    }
   }
 
   syncObjects(delta) {
     this.player.group.position.copy(this.player.body.position);
-    // Keep the visual robot upright while the collider remains fixed.
     const visualYaw = this.player.group.rotation.y;
     this.player.group.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), visualYaw);
-    this.box.update(delta);
+    this.boxes.forEach((box) => box.update(delta));
   }
 
-  updateSwitch(delta) {
-    if (this.switchPressed) return;
-    const box = this.box.body.position;
-    const [x, , z] = CONFIG.switch.position;
-    const horizontal = Math.hypot(box.x - x, box.z - z);
-    const onPlate = horizontal < 1.38 && box.y < 1.25;
-    if (!onPlate) return;
-    this.switchPressed = true;
-    this.doorOpen = true;
-    this.switchPlate.position.y = 0.04;
-    this.switchPlate.material.color.set(0x78d987);
-    this.switchPlate.material.emissive.set(0x227b3b);
-    this.ui.toast('扉が開いた！', 'green');
+  updateSwitches(delta) {
+    this.switches.forEach((switchState) => {
+      const [x, , z] = switchState.position;
+      const triggerRadius = Math.max(switchState.size[0], switchState.size[2]) * 0.62;
+      const pressed = this.boxes.some((box) => {
+        const horizontal = Math.hypot(box.body.position.x - x, box.body.position.z - z);
+        return horizontal < triggerRadius && box.body.position.y - box.size / 2 < 0.58;
+      });
+
+      if (pressed) {
+        switchState.dwell += delta;
+        switchState.release = 0;
+      } else {
+        switchState.dwell = 0;
+        switchState.release += delta;
+      }
+
+      const wasActive = switchState.active;
+      if (switchState.mode === 'latch') {
+        if (switchState.dwell >= 0.14) switchState.active = true;
+      } else if (switchState.dwell >= 0.14) {
+        switchState.active = true;
+      } else if (switchState.release >= 0.3) {
+        switchState.active = false;
+      }
+
+      const targetY = switchState.active ? 0.04 : 0.15;
+      switchState.plate.position.y = THREE.MathUtils.damp(switchState.plate.position.y, targetY, 12, delta);
+      switchState.plate.material.color.set(switchState.active ? 0x69d284 : this.stage.palette.switch);
+      switchState.plate.material.emissiveIntensity = switchState.active ? 0.62 : 0.18;
+      if (!wasActive && switchState.active) {
+        switchState.pulse = 0.65;
+        this.ui.toast('スイッチ ON!', 'green');
+      }
+      if (switchState.pulse > 0) {
+        switchState.pulse -= delta;
+        const progress = 1 - Math.max(0, switchState.pulse) / 0.65;
+        switchState.pulseRing.scale.setScalar(1 + progress * 1.5);
+        switchState.pulseRing.material.opacity = (1 - progress) * 0.75;
+      } else {
+        switchState.pulseRing.material.opacity = 0;
+      }
+    });
   }
 
-  updateDoor(delta) {
-    const targetY = this.doorOpen ? CONFIG.room.height + 1.5 : CONFIG.door.position[1];
-    const current = this.room.door.body.position.y;
-    const next = THREE.MathUtils.damp(current, targetY, 4.2, delta);
-    this.room.door.body.position.y = next;
-    this.room.door.body.velocity.setZero();
-    this.room.door.body.aabbNeedsUpdate = true;
-    this.room.door.mesh.position.y = next;
+  updateDoors(delta) {
+    this.doors.forEach((door) => {
+      const shouldOpen = door.requires.every((id) => this.switches.find((item) => item.id === id)?.active);
+      if (shouldOpen && !door.open) {
+        door.open = true;
+        this.ui.toast(door.id === 'middle-gate' ? '中間ゲート OPEN!' : '扉が開いた！ OPEN!', 'green');
+      } else if (!shouldOpen && door.open) {
+        door.open = false;
+      }
+      const target = door.open ? door.openPosition : door.closedPosition;
+      const nextX = THREE.MathUtils.damp(door.body.position.x, target[0], 4.4, delta);
+      const nextY = THREE.MathUtils.damp(door.body.position.y, target[1], 4.4, delta);
+      const nextZ = THREE.MathUtils.damp(door.body.position.z, target[2], 4.4, delta);
+      door.body.position.set(nextX, nextY, nextZ);
+      door.body.velocity.setZero();
+      door.body.aabbNeedsUpdate = true;
+      door.mesh.position.set(nextX, nextY, nextZ);
+    });
   }
 
   updateGoal(delta) {
-    this.goalGroup.rotation.y += delta * 0.48;
-    this.goalBeam.material.opacity = 0.12 + Math.sin(performance.now() * 0.003) * 0.04;
-    if (this.clear || !this.doorOpen) return;
-    const [x, , z] = CONFIG.goal.position;
+    const goal = this.runtime.goal;
+    goal.group.rotation.y += delta * 0.48;
+    goal.beam.material.opacity = 0.12 + Math.sin(performance.now() * 0.003) * 0.04;
+    if (this.clear) return;
     const player = this.player.body.position;
-    if (Math.hypot(player.x - x, player.z - z) < CONFIG.goal.radius && player.y < 2.5) {
+    if (Math.hypot(player.x - goal.position[0], player.z - goal.position[2]) < goal.radius && player.y < 2.5) {
       this.clear = true;
       this.freePlay = false;
-      this.ui.showClear(true);
+      const final = this.currentStageIndex === STAGE_COUNT - 1;
+      this.highestStage = Math.max(this.highestStage, Math.min(STAGE_COUNT, this.stage.id + 1));
+      this.saveProgress(this.stage.id, this.highestStage);
+      this.ui.showClear(true, { final, stageName: this.stage.name });
+      this.ui.setStealState(false);
+      this.vibrate(50);
     }
   }
 
@@ -293,10 +413,10 @@ export class Game {
       target.y + Math.sin(this.cameraPitch) * this.cameraDistance + 0.65,
       target.z + Math.cos(this.cameraYaw) * horizontal,
     );
-    const roomLimitX = CONFIG.room.width / 2 - 0.45;
-    const roomLimitZ = CONFIG.room.depth / 2 - 0.45;
+    const roomLimitX = this.stage.room.width / 2 - 0.45;
+    const roomLimitZ = this.stage.room.depth / 2 - 0.45;
     desired.x = THREE.MathUtils.clamp(desired.x, -roomLimitX, roomLimitX);
-    desired.y = THREE.MathUtils.clamp(desired.y, 0.55, CONFIG.room.height - 0.35);
+    desired.y = THREE.MathUtils.clamp(desired.y, 0.55, this.stage.room.height - 0.35);
     desired.z = THREE.MathUtils.clamp(desired.z, -roomLimitZ, roomLimitZ);
     const smooth = 1 - Math.exp(-8 * delta);
     this.camera.position.lerp(desired, smooth);
@@ -305,49 +425,134 @@ export class Game {
 
   updateInteraction() {
     const interactionsEnabled = !this.clear || this.freePlay;
-    const close = this.distanceToBox() <= CONFIG.box.interactionDistance;
-    const ceilingRecall = this.box.isAtCeiling() && !this.box.stolen && Boolean(this.box.gravityDirection) && interactionsEnabled;
-    this.ui.showInteraction((close || ceilingRecall) && !this.box.stolen && Boolean(this.box.gravityDirection) && interactionsEnabled, ceilingRecall ? '天井から遠隔回収' : '重力を盗む');
-    this.ui.setRecoveryMode(ceilingRecall);
+    const available = Boolean(this.activeBox?.gravityDirection && interactionsEnabled);
+    const recovery = Boolean(available
+      && this.activeBox.isAtCeiling(this.stage.room.height)
+      && this.activeBox.body.position.distanceTo(this.player.body.position) > CONFIG.box.interactionDistance);
+    this.ui.showInteraction(available, recovery ? '天井から遠隔回収' : '重力をぬすむ');
+    this.ui.setStealState(available, recovery);
+  }
+
+  updateRepeatHint(delta) {
+    if (!this.repeatHintArmed || !this.repeatHintBox) return;
+    this.repeatHintDelay -= delta;
+    const speed = this.repeatHintBox.body.velocity.length();
+    if (this.repeatHintDelay > 0 || speed > 0.42 || this.repeatHintBox.stolen) return;
+    this.repeatHintArmed = false;
+    this.ui.toast('もう一度ぬすめるよ！', 'gold');
+    this.ui.pulseSteal();
+    this.repeatHintBox.pulseHint();
+    this.markRepeatHintSeen();
   }
 
   enableFreePlay() {
     this.freePlay = true;
     this.ui.showClear(false);
     this.player.body.wakeUp();
-    this.box.body.wakeUp();
-    this.ui.toast('自由に遊べるようになった！', 'green');
+    this.boxes.forEach((box) => box.body.wakeUp());
+    this.ui.toast('ステージ5で自由に遊べるよ！', 'green');
   }
 
   checkBounds() {
+    const { width, height, depth } = this.stage.room;
     const player = this.player.body.position;
-    const box = this.box.body.position;
-    if (player.y < -5 || Math.abs(player.x) > 20 || Math.abs(player.z) > 25 || box.y < -8 || Math.abs(box.x) > 24 || Math.abs(box.z) > 28) {
-      this.reset();
+    if (player.y < -5 || Math.abs(player.x) > width || Math.abs(player.z) > depth) this.resetPlayer();
+    this.boxes.forEach((box) => {
+      const position = box.body.position;
+      if (position.y < -8 || position.y > height + 6 || Math.abs(position.x) > width + 6 || Math.abs(position.z) > depth + 6) box.reset();
+    });
+  }
+
+  resetPlayer() {
+    this.player.body.position.set(...this.player.spawn);
+    this.player.body.velocity.setZero();
+    this.player.body.angularVelocity.setZero();
+    this.player.group.position.set(...this.player.spawn);
+    this.facePlayerToward(this.stage.doors[0]?.position ?? this.stage.goal.position);
+  }
+
+  facePlayerToward(position) {
+    const spawn = this.player.spawn;
+    this.player.group.rotation.y = Math.atan2(position[0] - spawn[0], position[2] - spawn[2]);
+  }
+
+  onBoxImpact(impact) {
+    if (impact >= 4.2) this.vibrate(24);
+  }
+
+  vibrate(duration) {
+    try {
+      if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') navigator.vibrate(duration);
+    } catch {
+      // Vibration is optional and must never interrupt play.
     }
   }
 
-  reset() {
-    this.clear = false;
-    this.freePlay = false;
-    this.doorOpen = false;
-    this.switchPressed = false;
-    this.player.body.position.set(...CONFIG.player.spawn);
-    this.player.body.velocity.setZero();
-    this.player.body.angularVelocity.setZero();
-    this.player.group.position.set(...CONFIG.player.spawn);
-    const doorDirectionX = CONFIG.door.position[0] - CONFIG.player.spawn[0];
-    const doorDirectionZ = CONFIG.door.position[2] - CONFIG.player.spawn[2];
-    this.player.group.rotation.y = Math.atan2(doorDirectionX, doorDirectionZ);
-    this.box.reset();
-    this.room.door.body.position.set(...CONFIG.door.position);
-    this.room.door.body.velocity.setZero();
-    this.room.door.mesh.position.set(...CONFIG.door.position);
-    this.switchPlate.position.y = 0.15;
-    this.switchPlate.material.color.set(0xff6a4d);
-    this.switchPlate.material.emissive.set(0x7f1c12);
-    this.ui?.reset();
-    this.ui?.updateStatus(this.box.directionId, this.box.stolen);
+  applyTheme(stage) {
+    this.scene.background = new THREE.Color(stage.palette.background);
+    this.scene.fog = new THREE.Fog(stage.palette.background, stage.id === 5 ? 20 : 22, stage.id === 5 ? 42 : 38);
+    this.hemisphere.color.set(stage.palette.ambient);
+    this.hemisphere.groundColor.set(stage.palette.groundLight);
+    this.hemisphere.intensity = stage.id === 5 ? 2.75 : 2.25;
+    this.sun.color.set(stage.id === 5 ? 0xe5edff : 0xfff0d2);
+    this.sun.intensity = stage.id === 5 ? 3.6 : 3.1;
+    document.documentElement.style.setProperty('--sky', stage.palette.background);
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', stage.palette.background);
+  }
+
+  setStageTimeout(callback, delay) {
+    const timer = window.setTimeout(() => {
+      this.stageTimers.delete(timer);
+      callback();
+    }, delay);
+    this.stageTimers.add(timer);
+    return timer;
+  }
+
+  clearStageTimers() {
+    this.stageTimers.forEach((timer) => clearTimeout(timer));
+    this.stageTimers.clear();
+  }
+
+  readProgress() {
+    try {
+      const currentRaw = localStorage.getItem(CONFIG.storage.currentStage);
+      const highestRaw = localStorage.getItem(CONFIG.storage.highestStage);
+      const current = currentRaw === null ? null : Number(currentRaw);
+      const highest = highestRaw === null ? null : Number(highestRaw);
+      const valid = (value) => Number.isInteger(value) && value >= 1 && value <= STAGE_COUNT;
+      if ((currentRaw !== null && !valid(current)) || (highestRaw !== null && !valid(highest))) throw new Error('invalid progress');
+      const safeHighest = valid(highest) ? highest : 1;
+      return { current: valid(current) ? current : safeHighest, highest: safeHighest };
+    } catch {
+      this.saveProgress(1, 1);
+      return { current: 1, highest: 1 };
+    }
+  }
+
+  saveProgress(current, highest) {
+    try {
+      localStorage.setItem(CONFIG.storage.currentStage, String(current));
+      localStorage.setItem(CONFIG.storage.highestStage, String(highest));
+    } catch {
+      // The game remains playable when storage is unavailable.
+    }
+  }
+
+  repeatHintWasSeen() {
+    try {
+      return localStorage.getItem(CONFIG.storage.repeatHintSeen) === '1';
+    } catch {
+      return false;
+    }
+  }
+
+  markRepeatHintSeen() {
+    try {
+      localStorage.setItem(CONFIG.storage.repeatHintSeen, '1');
+    } catch {
+      // Optional tutorial persistence.
+    }
   }
 
   resize() {

@@ -107,4 +107,10 @@ export class TouchControls {
     this.lookDelta = { x: 0, y: 0 };
     return result;
   }
+
+  reset() {
+    this.move = { x: 0, y: 0 };
+    this.lookDelta = { x: 0, y: 0 };
+    this.actions.clear();
+  }
 }
