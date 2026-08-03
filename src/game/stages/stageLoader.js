@@ -120,6 +120,11 @@ export function loadStage({ scene, world, stage, physicsMaterials, onBoxImpact }
   const switches = stage.switches.map((definition) => createSwitch(root, definition, stage.palette));
   const doors = stage.doors.map((definition) => createDoor(root, world, physicsMaterials.floor, definition, stage.palette, registerBody));
   const goal = createGoal(root, stage.goal, stage.palette);
+  const cameraColliders = [
+    ...Object.values(room).map((surface) => surface?.mesh).filter(Boolean),
+    ...obstacles.map((obstacle) => obstacle.mesh),
+    ...doors.map((door) => door.mesh),
+  ];
 
   if (stage.id === 5) {
     const coreLightA = new THREE.PointLight(stage.palette.gravity, 18, 16, 2);
@@ -158,5 +163,5 @@ export function loadStage({ scene, world, stage, physicsMaterials, onBoxImpact }
     disposeObjectTree(root);
   };
 
-  return { root, bodies, room, obstacles, player, boxes, switches, doors, goal, previewDirection, clearPreview, dispose };
+  return { root, bodies, room, obstacles, player, boxes, switches, doors, goal, cameraColliders, previewDirection, clearPreview, dispose };
 }

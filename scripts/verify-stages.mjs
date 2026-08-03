@@ -44,6 +44,10 @@ for (const stage of STAGE_DEFINITIONS) {
   assert(runtime.switches.length === stage.switches.length, `Stage ${stage.id}: switch count mismatch`);
   assert(runtime.doors.length === stage.doors.length, `Stage ${stage.id}: door count mismatch`);
   assert(runtime.bodies.length === world.bodies.length, `Stage ${stage.id}: body tracking mismatch`);
+  assert(
+    runtime.cameraColliders.length === 6 + stage.obstacles.length + stage.doors.length,
+    `Stage ${stage.id}: camera collider list mismatch`,
+  );
   stage.doors.forEach((door) => door.requires.forEach((switchId) => {
     assert(stage.switches.some((item) => item.id === switchId), `Stage ${stage.id}: door references missing switch ${switchId}`);
   }));
@@ -61,13 +65,14 @@ for (const stage of STAGE_DEFINITIONS) {
     switches: runtime.switches,
     doors: runtime.doors,
     player: runtime.player,
-    ui: { toast() {}, showClear() {}, setStealState() {} },
+    ui: { toast() {}, showClear() {}, showSettings() {}, setStealState() {} },
     clear: false,
     freePlay: false,
     currentStageIndex: stage.id - 1,
     highestStage: stage.id,
     saveProgress() {},
     vibrate() {},
+    refreshCameraInputState() {},
   };
 
   Game.prototype.updateSwitches.call(gameState, 0.2);
